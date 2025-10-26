@@ -2,6 +2,10 @@ struct SemiringLU{T, M <: AbstractMatrix{T}}
     factors::M
 end
 
+function Base.size(F::SemiringLU)
+    return size(F.factors)
+end
+
 function Base.getproperty(F::SemiringLU, d::Symbol)
     if d == :L
         p = StrictLowerTriangular(F.factors)
@@ -52,9 +56,7 @@ function sldiv!(A::UpperTriangular, B::AbstractArray)
 end
 
 function sldiv!(A::SemiringLU, B::AbstractArray)
-    strmm!(A.factors, B, Val(:L), Val(:L))
-    strmm!(A.factors, B, Val(:U), Val(:L))
-    return B
+    return sldiv!(A.U, sldiv!(A.L, B))
 end
 
 function sldiv!(A::AbstractMatrix, B::AbstractArray)
@@ -81,16 +83,38 @@ function srdiv!(B::AbstractArray, A::UpperTriangular)
 end
 
 function srdiv!(B::AbstractArray, A::SemiringLU)
-    strmm!(A.factors, B, Val(:U), Val(:R))
-    strmm!(A.factors, B, Val(:L), Val(:R))
+    return srdiv!(srdiv!(B, A.U), A.L)
+end
+
+function srdiv!(B::AbstractArray, A::AbstractMatrix)
+    return srdiv!(B, slu(A))
+end
+
+function sinv(A::AbstractMatrix)
+    return sinv(slu(A))
+end
+
+function sinv(A::StrictLowerTriangular{T}) where {T}
+    B = Matrix{T}(undef, size(A))
+    copyto!(B, A)
+    strtri!(B, Val(:L))
     return B
 end
 
-function sinv(A::AbstractMatrix{T}) where {T}
-    B = zeros(T, size(A))
-    B[diagind(B)] .= one(T)
-    return sldiv!(A, B)
+function sinv(A::UpperTriangular{T}) where {T}
+    B = Matrix{T}(undef, size(A))
+    copyto!(B, A)
+    strtri!(B, Val(:U))
+    return B
 end
+
+function sinv(A::SemiringLU)
+    return sldiv!(A.U, sinv(A.L))
+end
+
+# ------------------------ #
+# Low-Level Matrix Kernels #
+# ------------------------ #
 
 function sgetrf2!(A::AbstractMatrix{T}) where {T}
     @assert size(A, 1) == size(A, 2)
@@ -132,33 +156,30 @@ function sgetrf!(A::AbstractMatrix{T}, blocksize::Int = DEFAULT_BLOCK_SIZE) wher
         #   A = [ Abb Abn ]
         #       [ Anb Ann ]
         #
-        Abb = @view A[strt:stop, strt:stop]
+        Abb = @view A[strt:stop,  strt:stop]
+        Abn = @view A[strt:stop,  stop + 1:n]
+        Anb = @view A[stop + 1:n, strt:stop]
+        Ann = @view A[stop + 1:n, stop + 1:n]
 
         #
         #   Abb ← Lbb + Ubb
         # 
         sgetrf2!(Abb)
 
-        if stop < n
-            Abn = @view A[strt:stop,  stop + 1:n]
-            Anb = @view A[stop + 1:n, strt:stop]
-            Ann = @view A[stop + 1:n, stop + 1:n]
+        # 
+        #   Abn ← Lbb* Abn
+        #    
+        strmm!(Abb, Abn, Val(:L), Val(:L))
 
-            # 
-            #   Abn ← Lbb* Abn
-            #    
-            strmm!(Abb, Abn, Val(:L), Val(:L))
+        #
+        #   Anb ← Anb Ubb*
+        #
+        strmm!(Abb, Anb, Val(:U), Val(:R))
 
-            #
-            #   Anb ← Anb Ubb*
-            #
-            strmm!(Abb, Anb, Val(:U), Val(:R))
-
-            #
-            #   Ann ← Ann + Anb Abn
-            #
-            mul!(Ann, Anb, Abn, one(T), one(T))
-        end
+        #
+        #   Ann ← Ann + Anb Abn
+        #
+        mul!(Ann, Anb, Abn, one(T), one(T))
     end
 
     return
@@ -200,32 +221,28 @@ function strmm!(A::AbstractMatrix{T}, B::AbstractArray{T}, uplo::Val{:L}, side::
         stop = strt + size - 1
 
         #
-        #   A = [ Abb   0   ]
-        #       [ Anb   Ann ]
+        #   A = [ Abb 0   ]
+        #       [ Anb Ann ]
         #
         Abb = @view A[strt:stop, strt:stop]
+        Anb = @view A[stop + 1:end, strt:stop]
 
         #
         #   B = [ Bb ]
         #       [ Bn ]
         #
         Bb = @view B[strt:stop, :]
+        Bn = @view B[stop + 1:end, :]
 
         #
         #   Bb ← Abb* Bb
         #
         strmm2!(Abb, Bb, uplo, side)
 
-        if stop < n
-            Anb = @view A[stop + 1:end, strt:stop]
-            Bn  = @view B[stop + 1:end, :]
-
-            #
-            #
-            #   Bn ← Bn + Anb Bb
-            #
-            mul!(Bn, Anb, Bb, one(T), one(T))
-        end
+        #
+        #   Bn ← Bn + Anb Bb
+        #
+        mul!(Bn, Anb, Bb, one(T), one(T))
     end
 
     return
@@ -277,27 +294,24 @@ function strmm!(A::AbstractMatrix{T}, B::AbstractArray{T}, uplo::Val{:U}, side::
         #       [ 0   Abb ]
         #
         Abb = @view A[strt:stop, strt:stop]
+        Anb = @view A[begin:strt - 1, strt:stop]
 
         #
         #   B = [ Bn ]
         #       [ Bb ]
         #
         Bb = @view B[strt:stop, :]
+        Bn = @view B[begin:strt - 1, :]
 
         #
         #   Bb ← Abb* Bbb
         #
         strmm2!(Abb, Bb, uplo, side)
 
-        if 1 < strt
-            Anb = @view A[begin:strt - 1, strt:stop]
-            Bn  = @view B[begin:strt - 1, :]
-
-            #
-            #   Bn ← Bn + Anb Bb
-            #
-            mul!(Bn, Anb, Bb, one(T), one(T))
-        end
+        #
+        #   Bn ← Bn + Anb Bb
+        #
+        mul!(Bn, Anb, Bb, one(T), one(T))
     end
 
     return
@@ -343,27 +357,24 @@ function strmm!(A::AbstractMatrix{T}, B::AbstractArray{T}, uplo::Val{:L}, side::
         #       [ Abn Abb ]
         #
         Abb = @view A[strt:stop, strt:stop]
+        Abn = @view A[strt:stop, begin:strt - 1]
 
         #
         #   B = [ Bn Bb ]
         #
         Bb = @view B[:, strt:stop]
+        Bn = @view B[:, begin:strt - 1]
 
         #
         #   Bb ← Bb Abb*
         #
         strmm2!(Abb, Bb, uplo, side)
 
-        if strt > 1
-            Abn = @view A[strt:stop, begin:strt - 1]
-            Bn  = @view B[:,         begin:strt - 1]
-     
-            #
-            #
-            #   Bn ← Bn + Bb Abn
-            #
-            mul!(Bn, Bb, Abn, one(T), one(T))
-        end
+        #
+        #
+        #   Bn ← Bn + Bb Abn
+        #
+        mul!(Bn, Bb, Abn, one(T), one(T))
     end
 
     return
@@ -397,6 +408,8 @@ function strmm2!(A::AbstractMatrix{T}, B::AbstractArray{T}, uplo::Val{:U}, side:
         #
         mul!(Bn, Bi, Ain |> transpose, one(T), one(T))
     end
+
+    return
 end
 
 function strmm!(A::AbstractMatrix{T}, B::AbstractArray{T}, uplo::Val{:U}, side::Val{:R}, blocksize::Int = DEFAULT_BLOCK_SIZE) where {T}
@@ -413,28 +426,172 @@ function strmm!(A::AbstractMatrix{T}, B::AbstractArray{T}, uplo::Val{:U}, side::
         #       [ 0   Ann ]
         #
         Abb = @view A[strt:stop, strt:stop]
- 
+        Abn = @view A[strt:stop, stop + 1:end]
+
         #
         #   B = [ Bb Bn ]
         #
         Bb = @view B[:, strt:stop]
+        Bn = @view B[:, stop + 1:end]
 
         #
         #   Bb ← Bb Abb*
         #
         strmm2!(Abb, Bb, uplo, side)
  
-        if stop < n
-            Abn = @view A[strt:stop, stop + 1:end]
-            Bn  = @view B[:,         stop + 1:end]
-
-            #
-            #
-            #   Bn ← Bn + Bb Abn
-            #
-            mul!(Bn, Bb, Abn, one(T), one(T))
-        end
+        #
+        #
+        #   Bn ← Bn + Bb Abn
+        #
+        mul!(Bn, Bb, Abn, one(T), one(T))
     end
 
     return
+end
+
+function strtri2!(A::AbstractMatrix{T}, uplo::Val{:L}) where {T}
+    @assert size(A, 1) == size(A, 2)
+
+    @inbounds for i in axes(A, 1)
+        #
+        #   A = [ Aim 0   0   ]
+        #       [ Anm Ani Ann ]
+        #
+        Ani = @view A[i + 1:end, i]
+        Aim = @view A[i,         begin:i - 1]
+        Anm = @view A[i + 1:end, begin:i - 1]
+
+        #
+        #   Anm ← Anm + Ani Aim 
+        #
+        mul!(Anm, Ani, Aim', one(T), one(T))
+
+        #
+        #   Aii ← 1
+        #
+        A[i, i] = one(T)
+    end
+
+    return
+end
+
+function strtri!(A::AbstractMatrix{T}, uplo::Val{:L}, blocksize = DEFAULT_BLOCK_SIZE) where {T}
+    @assert size(A, 1) == size(A, 2)
+
+    n = size(A, 1)
+
+    @inbounds for strt in 1:blocksize:n
+        size = min(blocksize, n - strt + 1)
+        stop = strt + size - 1
+
+        #
+        #   A = [ Abm Abb 0   ]
+        #       [ Anm Anb Ann ]
+        #
+        Abb = @view A[strt:stop,    strt:stop]
+        Anb = @view A[stop + 1:end, strt:stop]
+        Anm = @view A[stop + 1:end, begin:strt - 1]
+        Abm = @view A[strt:stop,    begin:strt - 1]
+
+        #
+        #   Abm ← Abb* Abm
+        #
+        strmm2!(Abb, Abm, uplo, Val(:L))
+
+        #
+        #   Anm ← Anm + Anb Abn
+        #
+        mul!(Anm, Anb, Abm, one(T), one(T))
+
+        #
+        #   Anb ← Anb Abb*
+        #
+        strmm2!(Abb, Anb, uplo, Val(:R))
+
+        #
+        #   Abb ← Abb*
+        #
+        strtri2!(Abb, uplo)
+    end
+    
+    return     
+end
+
+function strtri2!(A::AbstractMatrix{T}, uplo::Val{:U}) where {T}
+    @assert size(A, 1) == size(A, 2)
+
+    @inbounds for i in reverse(axes(A, 1))
+        #
+        #   A = [ Ann Ani Anm ]
+        #       [ 0   Aii Aim ]
+        #
+        Aii = A[i, i]
+        Ani = @view A[begin:i - 1, i]
+        Aim = @view A[i,           i + 1:end]
+        Anm = @view A[begin:i - 1, i + 1:end]
+
+        #
+        #   Aim ← Aii* Aim
+        #
+        sldiv!(Aii, Aim)
+
+        #
+        #   Anm ← Anm + Ani Aim 
+        #
+        mul!(Anm, Ani, Aim', one(T), one(T))
+
+        #
+        #   Ani ← Ani Aii*
+        #
+        srdiv!(Ani, Aii)
+
+        #
+        #   Aii ← Aii*
+        #
+        A[i, i] = sinv(Aii)
+    end
+
+    return
+end
+
+function strtri!(A::AbstractMatrix{T}, uplo::Val{:U}, blocksize = DEFAULT_BLOCK_SIZE) where {T}
+    @assert size(A, 1) == size(A, 2)
+
+    n = size(A, 1)
+
+    @inbounds for stop in n:-blocksize:1
+        size = min(blocksize, stop)
+        strt = stop - size + 1
+
+        #
+        #   A = [ Ann Anb Anm ]
+        #       [ 0   Abb Abm ]
+        #
+        Abb = @view A[strt:stop,      strt:stop]
+        Anb = @view A[begin:strt - 1, strt:stop]
+        Abm = @view A[strt:stop,      stop + 1:end]
+        Anm = @view A[begin:strt - 1, stop + 1:end]
+
+        #
+        #   Abm ← Abb* Abm
+        #
+        strmm2!(Abb, Abm, uplo, Val(:L))
+
+        #
+        #   Anm ← Anm + Anb Abm 
+        #
+        mul!(Anm, Anb, Abm, one(T), one(T))
+
+        #
+        #   Anb ← Anb Abb*
+        #
+        strmm2!(Abb, Anb, uplo, Val(:R))
+
+        #
+        #   Abb ← Abb*
+        #
+        strtri2!(Abb, uplo)
+    end
+    
+    return     
 end
