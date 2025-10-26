@@ -1,0 +1,18 @@
+name = "SemiringLU"
+uuid = "db4ec80b-80b3-495a-89ff-20ea6805740f"
+version = "0.1.0"
+authors = ["Richard Samuelson <samuelson.rick@gmail.com>"]
+
+[deps]
+CliqueTrees = "60701a23-6482-424a-84db-faee86b9b1f8"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+TropicalGEMM = "a4ad3063-64a7-4bad-8738-34ed09bc0236"
+TropicalNumbers = "b3a74e9c-7526-4576-a4eb-79c0d4c32334"
+
+[compat]
+CliqueTrees = "1.12.2"
+LinearAlgebra = "1.12.0"
+SparseArrays = "1.12.0"
+TropicalGEMM = "0.2.0"
+TropicalNumbers = "0.6.3"
