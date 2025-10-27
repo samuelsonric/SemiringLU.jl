@@ -71,6 +71,11 @@ function SparseSemiringLU(matrix::SparseMatrixCSC{T, I}, symb::SymbolicSemiringL
     return SparseSemiringLU(symb, Rptr, Rval, Lptr, Lval, Uval)    
 end
 
+function Base.size(F::SparseSemiringLU)
+    n = convert(Int, nov(F.symb.res))
+    return (n, n)
+end
+
 function Base.show(io::IO, ::MIME"text/plain", fact::T) where {T <: SparseSemiringLU}
     frt = fact.symb.nFval
     nnz = fact.symb.nRval + fact.symb.nLval + fact.symb.nLval
@@ -91,6 +96,34 @@ end
 function slu(matrix::SparseMatrixCSC, symb::SymbolicSemiringLU)
     return SparseSemiringLU(matrix, symb)
 end 
+
+function sinv(A::SparseMatrixCSC; alg::PermutationOrAlgorithm = DEFAULT_ELIMINATION_ALGORITHM, snd::SupernodeType = DEFAULT_SUPERNODE_TYPE)
+    return sinv(matrix, alg, snd)
+end
+
+function sinv(matrix::SparseMatrixCSC, alg::PermutationOrAlgorithm, snd::SupernodeType)
+    return sinv(matrix, slu(matrix, alg, snd))
+end
+
+function sinv(A::SparseSemiringLU{T}) where {T}
+    B = zeros(T, size(A))
+    B[diagind(B)] .= one(T)
+    return sldiv!(A, B)
+end
+
+function mtsinv(A::SparseMatrixCSC; alg::PermutationOrAlgorithm = DEFAULT_ELIMINATION_ALGORITHM, snd::SupernodeType = DEFAULT_SUPERNODE_TYPE)
+    return mtsinv(matrix, alg, snd)
+end
+
+function mtsinv(matrix::SparseMatrixCSC, alg::PermutationOrAlgorithm, snd::SupernodeType)
+    return mtsinv(matrix, slu(matrix, alg, snd))
+end
+
+function mtsinv(A::SparseSemiringLU{T}) where {T}
+    B = zeros(T, size(A))
+    B[diagind(B)] .= one(T)
+    return mtsldiv!(A, B)
+end
 
 function sldiv!(A::SparseSemiringLU{T, I}, B::AbstractArray) where {T, I <: Integer}
     neqn = convert(I, size(B, 1))
