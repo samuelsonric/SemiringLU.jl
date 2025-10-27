@@ -12,7 +12,7 @@ using SparseArrays
 using TropicalGEMM
 using TropicalNumbers
 
-const DEFAULT_BLOCK_SIZE = 64
+const DEFAULT_BLOCK_SIZE = 32
 
 export StrictLowerTriangular
 export SemiringLU, sinv, slu, slu!, sldiv!, srdiv!

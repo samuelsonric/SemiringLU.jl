@@ -467,8 +467,7 @@ function ssldiv_fwd_loop!(
     Lp = Lptr[j]
     B₁₁ = reshape(view(Rval, Rp:Rp + nn * nn - one(I)), nn, nn)
     B₂₁ = reshape(view(Lval, Lp:Lp + nn * na - one(I)), na, nn)
-
-    fact = SemiringLU(B₁₁)
+    L₁₁ = StrictLowerTriangular(B₁₁)
 
     # C₁ is part of the right-hand side
     #
@@ -493,7 +492,7 @@ function ssldiv_fwd_loop!(
     #
     #   F₁ ← B₁₁* F₁
     #
-    sldiv!(fact.L, F₁)
+    sldiv!(L₁₁, F₁)
 
     if ispositive(na)
         ns += one(I)
@@ -581,8 +580,7 @@ function ssldiv_bwd_loop!(
     Lp = Lptr[j]
     B₁₁ = reshape(view(Rval, Rp:Rp + nn * nn - one(I)), nn, nn)
     B₁₂ = reshape(view(Uval, Lp:Lp + nn * na - one(I)), nn, na)
-
-    fact = SemiringLU(B₁₁)
+    U₁₁ = UpperTriangular(B₁₁)
 
     # C₁ is part of the right-hand side
     #
@@ -618,7 +616,7 @@ function ssldiv_bwd_loop!(
     #
     #   F₁ ← B₁₁* F₁
     #
-    sldiv!(fact.U, F₁)
+    sldiv!(U₁₁, F₁)
 
     for i in neighbors(chd, j)
         ns += one(I)

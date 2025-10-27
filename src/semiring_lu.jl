@@ -188,7 +188,7 @@ end
 function strmm2!(A::AbstractMatrix{T}, B::AbstractArray{T}, uplo::Val{:L}, side::Val{:L}) where {T}
     @assert size(A, 1) == size(A, 2) == size(B, 1)
 
-    @inbounds for i in axes(A, 1)
+    @inbounds for j in axes(B, 2), i in axes(A, 1)
         #
         #   A = [ 0   0   ]
         #       [ Ani Ann ]
@@ -199,13 +199,15 @@ function strmm2!(A::AbstractMatrix{T}, B::AbstractArray{T}, uplo::Val{:L}, side:
         #   B = [ Bi ]
         #       [ Bn ]
         #
-        Bi = @view B[i,         :]
-        Bn = @view B[i + 1:end, :]
+        Bi =       B[i,         j]
+        Bn = @view B[i + 1:end, j]
 
-        #
-        #   Bn ← Bn + Ani Bi
-        #
-        mul!(Bn, Ani, Bi |> transpose, one(T), one(T))
+        if Bi != zero(T)
+            #
+            #   Bn ← Bn + Ani Bi
+            #
+            mul!(Bn, Ani, Bi, one(T), one(T))
+        end
     end
 
     return
@@ -224,14 +226,14 @@ function strmm!(A::AbstractMatrix{T}, B::AbstractArray{T}, uplo::Val{:L}, side::
         #   A = [ Abb 0   ]
         #       [ Anb Ann ]
         #
-        Abb = @view A[strt:stop, strt:stop]
+        Abb = @view A[strt:stop,    strt:stop]
         Anb = @view A[stop + 1:end, strt:stop]
 
         #
         #   B = [ Bb ]
         #       [ Bn ]
         #
-        Bb = @view B[strt:stop, :]
+        Bb = @view B[strt:stop,    :]
         Bn = @view B[stop + 1:end, :]
 
         #
@@ -251,30 +253,32 @@ end
 function strmm2!(A::AbstractMatrix{T}, B::AbstractArray{T}, uplo::Val{:U}, side::Val{:L}) where {T}
     @assert size(A, 1) == size(A, 2) == size(B, 1)
 
-    @inbounds for i in reverse(axes(A, 1))
+    @inbounds for j in axes(B, 2), i in reverse(axes(A, 1))
         #
         #   A = [ Ann Ani ]
         #       [ 0   Aii ]
         #
-        Aii = A[i, i]
         Ani = @view A[begin:i - 1, i]
+        Aii =       A[i,           i]
 
         #
         #   B = [ Bn ]
         #       [ Bi ]
         #
-        Bi = @view B[i,           :]
-        Bn = @view B[begin:i - 1, :]
+        Bn = @view B[begin:i - 1, j]
+        Bi =       B[i,           j]
 
         #
         #   Bi ← Aii* Bi
-        #    
-        sldiv!(Aii, Bi)
+        #
+        Bi = B[i, j] = sinv(Aii) * Bi
 
-        #
-        #   Bn ← Bn + Ani Bi
-        #
-        mul!(Bn, Ani, Bi |> transpose, one(T), one(T))
+        if Bi != zero(T)
+            #
+            #   Bn ← Bn + Ani Bi
+            #
+            mul!(Bn, Ani, Bi, one(T), one(T))
+        end
     end
 
     return
