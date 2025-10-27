@@ -115,28 +115,56 @@ function sldiv!(A::SparseSemiringLU{T, I}, B::AbstractArray) where {T, I <: Inte
     Mval = FVector{T}(undef, nNval * nrhs)
     Fval = FVector{T}(undef, nFval * nrhs)
 
-    C = FMatrix{T}(undef, neqn, nrhs)
-
-    # copy B into C
+    C  = FMatrix{T}(undef, neqn, nrhs)
     C .= view(B, ord, :)
 
-    # initialize empty stack
-    ns = zero(I); Mptr[one(I)] = one(I)
+    ssldiv_impl!(C, Mptr, Mval, Rptr, Rval, Lptr,
+        Lval, Uval, Fval, res, rel, chd)
 
-    # forward substitution loop
-    for j in vertices(res)
-        ns = ssldiv_fwd_loop!(C, Mptr, Mval, Rptr, Rval, Lptr,
-            Lval, Fval, res, rel, chd, ns, j)
-    end
-
-    # backward substitution loop
-    for j in reverse(vertices(res))
-        ns = ssldiv_bwd_loop!(C, Mptr, Mval, Rptr, Rval, Lptr,
-            Uval, Fval, res, rel, chd, ns, j)
-    end
-
-    # copy C into B
     view(B, ord, :) .= C
+    return B
+end
+
+function mtsldiv!(A::SparseSemiringLU{T, I}, B::AbstractArray) where {T, I <: Integer}
+    neqn = convert(I, size(B, 1))
+    nrhs = convert(I, size(B, 2))
+
+    ord = A.symb.ord
+    res = A.symb.res
+    rel = A.symb.rel
+    chd = A.symb.chd
+
+    Rptr = A.Rptr
+    Rval = A.Rval
+    Lptr = A.Lptr
+    Lval = A.Lval
+    Uval = A.Uval
+
+    nMptr = A.symb.nMptr
+    nNval = A.symb.nNval
+    nFval = A.symb.nFval
+
+    D = FMatrix{T}(undef, neqn, nrhs)
+
+    blocksize = convert(I, max(32, div(nthreads(), 4)))
+
+    @threads for strt in one(I):blocksize:nrhs
+        size = min(blocksize, nrhs - strt + one(I))
+        stop = strt + size - one(I)
+
+        C  = view(D, oneto(neqn), strt:stop)
+        C .= view(B, ord,         strt:stop)
+
+        Mptr = FVector{I}(undef, nMptr)
+        Mval = FVector{T}(undef, nNval * size)
+        Fval = FVector{T}(undef, nFval * size)
+
+        ssldiv_impl!(C, Mptr, Mval, Rptr, Rval, Lptr,
+            Lval, Uval, Fval, res, rel, chd)
+
+        view(B, ord, strt:stop) .= C
+    end
+
     return B
 end
 
@@ -406,6 +434,37 @@ function sslu_loop!(
     B₁₂ .= F₁₂
 
     return ns
+end
+
+function ssldiv_impl!(
+        C::AbstractArray{T},
+        Mptr::AbstractVector{I},
+        Mval::AbstractVector{T},
+        Rptr::AbstractVector{I},
+        Rval::AbstractVector{T},
+        Lptr::AbstractVector{I},
+        Lval::AbstractVector{T},
+        Uval::AbstractVector{T},
+        Fval::AbstractVector{T},
+        res::AbstractGraph{I},
+        rel::AbstractGraph{I}, 
+        chd::AbstractGraph{I},
+    ) where {T, I <: Integer}
+    ns = zero(I); Mptr[one(I)] = one(I)
+
+    # forward substitution loop
+    for j in vertices(res)
+        ns = ssldiv_fwd_loop!(C, Mptr, Mval, Rptr, Rval, Lptr,
+            Lval, Fval, res, rel, chd, ns, j)
+    end
+
+    # backward substitution loop
+    for j in reverse(vertices(res))
+        ns = ssldiv_bwd_loop!(C, Mptr, Mval, Rptr, Rval, Lptr,
+            Uval, Fval, res, rel, chd, ns, j)
+    end
+
+    return
 end
 
 function ssldiv_fwd_loop!(
