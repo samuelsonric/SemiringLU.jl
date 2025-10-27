@@ -137,7 +137,7 @@ function sgetrf2!(A::AbstractMatrix{T}) where {T}
         #
         #   Ann ← Ann + Ani Ain
         #
-        mul!(Ann, Ani, Ain', one(T), one(T))
+        mul!(Ann, Ani, Ain |> transpose, one(T), one(T))
     end
 
     return
@@ -464,7 +464,7 @@ function strtri2!(A::AbstractMatrix{T}, uplo::Val{:L}) where {T}
         #
         #   Anm ← Anm + Ani Aim 
         #
-        mul!(Anm, Ani, Aim', one(T), one(T))
+        mul!(Anm, Ani, Aim |> transpose, one(T), one(T))
 
         #
         #   Aii ← 1
@@ -538,7 +538,7 @@ function strtri2!(A::AbstractMatrix{T}, uplo::Val{:U}) where {T}
         #
         #   Anm ← Anm + Ani Aim 
         #
-        mul!(Anm, Ani, Aim', one(T), one(T))
+        mul!(Anm, Ani, Aim |> transpose, one(T), one(T))
 
         #
         #   Ani ← Ani Aii*
