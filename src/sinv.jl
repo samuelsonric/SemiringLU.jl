@@ -1,19 +1,31 @@
-function sinv(x::TropicalAndOr)
+"""
+    sinv(a)
+
+Compute a quasi-inverse of a, i.e. an
+object a* satisfying
+
+    a* = 1 + a a*
+       = 1 + a* a
+
+"""
+sinv(a)
+
+function sinv(a::TropicalAndOr)
     return TropicalAndOr(true)
 end
 
-function sinv(x::T) where {T <: AbstractFloat}
-    if isone(x)
+function sinv(a::T) where {T <: AbstractFloat}
+    if isone(a)
         n = posinf(T)
     else
-        n = inv(one(T) - x)
+        n = inv(one(T) - a)
     end
 
     return n
 end
 
-function sinv(x::TropicalMaxMul{T}) where {T}
-    if x.n > one(T)
+function sinv(a::TropicalMaxMul{T}) where {T}
+    if a.n > one(T)
         n = posinf(T)
     else
         n = one(T)
@@ -22,8 +34,8 @@ function sinv(x::TropicalMaxMul{T}) where {T}
     return TropicalMaxMul(n)
 end
 
-function sinv(x::TropicalMaxPlus{T}) where {T}
-    if x.n > zero(T)
+function sinv(a::TropicalMaxPlus{T}) where {T}
+    if a.n > zero(T)
         n = posinf(T)
     else
         n = zero(T)
@@ -32,8 +44,8 @@ function sinv(x::TropicalMaxPlus{T}) where {T}
     return TropicalMaxPlus(n)
 end
     
-function sinv(x::TropicalMinPlus{T}) where {T}
-    if x.n < zero(T)
+function sinv(a::TropicalMinPlus{T}) where {T}
+    if a.n < zero(T)
         n = neginf(T)
     else
         n = zero(T)

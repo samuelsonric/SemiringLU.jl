@@ -1,3 +1,9 @@
+"""
+    SparseSemiringLU{T, I}
+
+An LU factorization of a sparse semiring-
+valued matrix.
+"""
 struct SparseSemiringLU{T, I}
     symb::SymbolicSemiringLU{I}
     Rptr::FVector{I}
@@ -85,24 +91,34 @@ function Base.show(io::IO, ::MIME"text/plain", fact::T) where {T <: SparseSemiri
     print(io, "\n  Lnz + Unz: $nnz")
 end
 
-function slu(matrix::SparseMatrixCSC; alg::PermutationOrAlgorithm = DEFAULT_ELIMINATION_ALGORITHM, snd::SupernodeType = DEFAULT_SUPERNODE_TYPE)
-    return slu(matrix, alg, snd)
+function slu(
+        A::SparseMatrixCSC;
+        alg::PermutationOrAlgorithm = DEFAULT_ELIMINATION_ALGORITHM,
+        snd::SupernodeType = DEFAULT_SUPERNODE_TYPE,
+        sym::Val = Val(false),
+    )
+    return slu(A, alg, snd, sym)
 end
 
-function slu(matrix::SparseMatrixCSC, alg::PermutationOrAlgorithm, snd::SupernodeType)
-    return slu(matrix, SymbolicSemiringLU(matrix, alg, snd))
+function slu(A::SparseMatrixCSC, alg::PermutationOrAlgorithm, snd::SupernodeType, sym::Val)
+    return slu(A, SymbolicSemiringLU(A, alg, snd, sym))
 end
 
-function slu(matrix::SparseMatrixCSC, symb::SymbolicSemiringLU)
-    return SparseSemiringLU(matrix, symb)
+function slu(A::SparseMatrixCSC, symb::SymbolicSemiringLU)
+    return SparseSemiringLU(A, symb)
 end 
 
-function sinv(A::SparseMatrixCSC; alg::PermutationOrAlgorithm = DEFAULT_ELIMINATION_ALGORITHM, snd::SupernodeType = DEFAULT_SUPERNODE_TYPE)
-    return sinv(matrix, alg, snd)
+function sinv(
+        A::SparseMatrixCSC;
+        alg::PermutationOrAlgorithm = DEFAULT_ELIMINATION_ALGORITHM,
+        snd::SupernodeType = DEFAULT_SUPERNODE_TYPE,
+        sym::Val = Val(false),
+    )
+    return sinv(A, alg, snd, sym)
 end
 
-function sinv(matrix::SparseMatrixCSC, alg::PermutationOrAlgorithm, snd::SupernodeType)
-    return sinv(matrix, slu(matrix, alg, snd))
+function sinv(A::SparseMatrixCSC, alg::PermutationOrAlgorithm, snd::SupernodeType, sym::Val)
+    return sinv(A, slu(A, alg, snd, sym))
 end
 
 function sinv(A::SparseSemiringLU{T}) where {T}
@@ -111,12 +127,17 @@ function sinv(A::SparseSemiringLU{T}) where {T}
     return sldiv!(A, B)
 end
 
-function mtsinv(A::SparseMatrixCSC; alg::PermutationOrAlgorithm = DEFAULT_ELIMINATION_ALGORITHM, snd::SupernodeType = DEFAULT_SUPERNODE_TYPE)
-    return mtsinv(matrix, alg, snd)
+function mtsinv(
+        A::SparseMatrixCSC;
+        alg::PermutationOrAlgorithm = DEFAULT_ELIMINATION_ALGORITHM,
+        snd::SupernodeType = DEFAULT_SUPERNODE_TYPE,
+        sym::Val = Val(false),
+    )
+    return mtsinv(A, alg, snd, sym)
 end
 
-function mtsinv(matrix::SparseMatrixCSC, alg::PermutationOrAlgorithm, snd::SupernodeType)
-    return mtsinv(matrix, slu(matrix, alg, snd))
+function mtsinv(A::SparseMatrixCSC, alg::PermutationOrAlgorithm, snd::SupernodeType, sym::Val)
+    return mtsinv(A, slu(A, alg, snd, sym))
 end
 
 function mtsinv(A::SparseSemiringLU{T}) where {T}

@@ -21,30 +21,35 @@ function Base.show(io::IO, ::MIME"text/plain", symb::T) where {T <: SymbolicSemi
     print(io, "\n  Lnz + Unz: $nnz")
 end
 
-function SymbolicSemiringLU(matrix::SparseMatrixCSC; alg::PermutationOrAlgorithm = DEFAULT_ELIMINATION_ALGORITHM, snd::SupernodeType = DEFAULT_SUPERNODE_TYPE)
-    return SymbolicSemiringLU(matrix, alg, snd)
+function SymbolicSemiringLU(matrix::SparseMatrixCSC; alg::PermutationOrAlgorithm = DEFAULT_ELIMINATION_ALGORITHM, snd::SupernodeType = DEFAULT_SUPERNODE_TYPE, sym::Val = Val(false))
+    return SymbolicSemiringLU(matrix, alg, snd, sym)
 end
 
-function SymbolicSemiringLU(matrix::SparseMatrixCSC{<:Any, I}, alg::PermutationOrAlgorithm, snd::SupernodeType) where {I <: Integer}
+function SymbolicSemiringLU(matrix::SparseMatrixCSC{<:Any, I}, alg::PermutationOrAlgorithm, snd::SupernodeType, sym::Val{S}) where {I <: Integer, S}
     # `digraph` is a directed graph 
     #
     #   D = (V, A)
     #
     digraph = BipartiteGraph(matrix)
 
-    # `graph` is an undirected graph
-    #
-    #   G = (V, E),
-    #
-    # where E is the set
-    #
-    #   E := { {v, w} | (v, x) ∈ A and (w, x) ∈ A }.
-    #
-    graph = linegraph(digraph, reverse(digraph)) 
+    if S
+        # `tree` is a tree decomposition T of D
+        perm, tree = cliquetree(matrix, alg, snd)
+    else
+        # `graph` is an undirected graph
+        #
+        #   G = (V, E),
+        #
+        # where E is the set
+        #
+        #   E := { {v, w} | (v, x) ∈ A and (w, x) ∈ A }.
+        #
+        graph = linegraph(digraph, reverse(digraph)) 
 
-    # `tree` is a tree decomposition T of G with
-    # perfect elimination ordering `perm`
-    perm, tree = cliquetree(graph, alg, snd)    
+        # `tree` is a tree decomposition T of G
+        perm, tree = cliquetree(graph, alg, snd)    
+    end
+
     res = residuals(tree)
     sep = separators(tree)
 

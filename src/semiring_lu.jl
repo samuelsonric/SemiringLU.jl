@@ -1,3 +1,9 @@
+"""
+    SemiringLU{T, M <: AbstractMatrix{T}}
+
+An LU factorization of a semiring-valued
+matrix.
+"""
 struct SemiringLU{T, M <: AbstractMatrix{T}}
     factors::M
 end
@@ -27,18 +33,51 @@ function Base.show(io::IO, mime::MIME"text/plain", F::T) where {T <: SemiringLU}
     return
 end
 
+"""
+    slu!(A::AbstractMatrix)
+
+Compute an LU factorization of a semiring-
+valued matrix A. The factors are stored
+in A.
+"""
 function slu!(A::AbstractMatrix)
     sgetrf!(A)
     return SemiringLU(A)
 end
 
+"""
+    slu(A::AbstractMatrix)
+
+Compute an LU factorization of a semiring-
+valued matrix A.
+"""
 function slu(A::AbstractMatrix)
     return slu!(Matrix(A))
 end
 
+"""
+    sldiv!(C::AbstractArray, A, B::AbstractArray)
+
+Solve the fixed-point equation
+
+    AX + B = X.
+
+The result is stored in C.
+"""
 function sldiv!(C::AbstractArray, A, B::AbstractArray)
     return sldiv!(A, copyto!(C, B))
 end
+
+"""
+    sldiv!(A, B::AbstractArray)
+
+Solve the fixed-point equation
+
+    AX + B = X.
+
+The result is stored in B.
+"""
+sldiv!(A, B::AbstractArray)
 
 function sldiv!(A::Number, B::AbstractArray)
     @. B = sinv(A) * B
@@ -63,9 +102,29 @@ function sldiv!(A::AbstractMatrix, B::AbstractArray)
     return sldiv!(slu(A), B)
 end
 
+"""
+    srdiv!(C::AbstractArray, B::AbstractArray, A)
+
+Solve the fixed-point equation
+
+    XA + B = X.
+
+The result is stored in C.
+"""
 function srdiv!(C::AbstractArray, B::AbstractArray, A)
     return srdiv!(copyto!(C, B), A)
 end
+
+"""
+    srdiv!(B::AbstractArray, A)
+
+Solve the fixed-point equation
+
+    XA + B = X.
+
+The result is stored in B.
+"""
+srdiv!(B::AbstractArray, A)
 
 function srdiv!(B::AbstractArray, A::Number)
     B .*= sinv(A)
