@@ -2,7 +2,7 @@ module SemiringLU
 
 using AbstractTrees
 using Base: oneto, @propagate_inbounds, OneTo
-using Base.Threads: nthreads, @threads
+using Base.Threads: nthreads, @threads, @spawn
 using CliqueTrees
 using CliqueTrees.Utilities
 using CliqueTrees: incident, linegraph, nov, PermutationOrAlgorithm, SupernodeType,
@@ -18,7 +18,7 @@ const DEFAULT_BLOCK_SIZE = 32
 export StrictLowerTriangular
 export SemiringLU, sinv, slu, slu!, sldiv!, srdiv!
 export SymbolicSemiringLU
-export SparseSemiringLU, mtsinv, mstldiv!
+export SparseSemiringLU, mtslu, mtsinv, mstldiv!
 
 include("strict_lower_triangular.jl")
 include("sinv.jl")

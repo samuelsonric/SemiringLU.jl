@@ -13,7 +13,34 @@ struct SparseSemiringLU{T, I}
     Uval::FVector{T}
 end
 
-function SparseSemiringLU(matrix::SparseMatrixCSC{T, I}, symb::SymbolicSemiringLU{I}) where {T, I <: Integer}
+function Base.size(F::SparseSemiringLU)
+    n = convert(Int, nov(F.symb.res))
+    return (n, n)
+end
+
+function Base.show(io::IO, ::MIME"text/plain", fact::T) where {T <: SparseSemiringLU}
+    frt = fact.symb.nFval
+    nnz = fact.symb.nRval + fact.symb.nLval + fact.symb.nLval
+
+    print(io, "$T:")
+    print(io, "\n  maximum front-size: $frt")
+    print(io, "\n  Lnz + Unz: $nnz")
+end
+
+function slu(
+        A::SparseMatrixCSC;
+        alg::PermutationOrAlgorithm = DEFAULT_ELIMINATION_ALGORITHM,
+        snd::SupernodeType = DEFAULT_SUPERNODE_TYPE,
+        sym::Val = Val(false),
+    )
+    return slu(A, alg, snd, sym)
+end
+
+function slu(A::SparseMatrixCSC, alg::PermutationOrAlgorithm, snd::SupernodeType, sym::Val)
+    return slu(A, SymbolicSemiringLU(A, alg, snd, sym))
+end
+
+function slu(matrix::SparseMatrixCSC{T, I}, symb::SymbolicSemiringLU{I}) where {T, I <: Integer}
     res = symb.res
     sep = symb.sep
     rel = symb.rel
@@ -25,7 +52,7 @@ function SparseSemiringLU(matrix::SparseMatrixCSC{T, I}, symb::SymbolicSemiringL
     nLval = symb.nLval
     nFval = symb.nFval
 
-    nRptr = nv(symb.res) + one(I)
+    nRptr = nv(res) + one(I)
 
     Mptr = FVector{I}(undef, nMptr)
     Mval = FVector{T}(undef, nMval)
@@ -65,48 +92,78 @@ function SparseSemiringLU(matrix::SparseMatrixCSC{T, I}, symb::SymbolicSemiringL
     # copy A into U
     sslu_copy_U!(Uval, res, sep, A)
 
-    # initialize empty stack
-    ns = zero(I); Mptr[one(I)] = one(I)
-
-    # multifrontal factorization loop
-    for j in vertices(res)
-        ns = sslu_loop!(Mptr, Mval, Rptr, Rval, Lptr,
-            Lval, Uval, Fval, res, rel, chd, ns, j)
-    end
+    sslu_impl!(Mptr, Mval, Rptr, Rval, Lptr,
+        Lval, Uval, Fval, res, rel, chd)
 
     return SparseSemiringLU(symb, Rptr, Rval, Lptr, Lval, Uval)    
 end
 
-function Base.size(F::SparseSemiringLU)
-    n = convert(Int, nov(F.symb.res))
-    return (n, n)
-end
-
-function Base.show(io::IO, ::MIME"text/plain", fact::T) where {T <: SparseSemiringLU}
-    frt = fact.symb.nFval
-    nnz = fact.symb.nRval + fact.symb.nLval + fact.symb.nLval
-
-    print(io, "$T:")
-    print(io, "\n  maximum front-size: $frt")
-    print(io, "\n  Lnz + Unz: $nnz")
-end
-
-function slu(
+function mtslu(
         A::SparseMatrixCSC;
         alg::PermutationOrAlgorithm = DEFAULT_ELIMINATION_ALGORITHM,
         snd::SupernodeType = DEFAULT_SUPERNODE_TYPE,
         sym::Val = Val(false),
     )
-    return slu(A, alg, snd, sym)
+    return mtslu(A, alg, snd, sym)
 end
 
-function slu(A::SparseMatrixCSC, alg::PermutationOrAlgorithm, snd::SupernodeType, sym::Val)
-    return slu(A, SymbolicSemiringLU(A, alg, snd, sym))
+function mtslu(A::SparseMatrixCSC, alg::PermutationOrAlgorithm, snd::SupernodeType, sym::Val)
+    return mtslu(A, SymbolicSemiringLU(A, alg, snd, sym))
 end
 
-function slu(A::SparseMatrixCSC, symb::SymbolicSemiringLU)
-    return SparseSemiringLU(A, symb)
-end 
+function mtslu(matrix::SparseMatrixCSC{T, I}, symb::SymbolicSemiringLU{I}) where {T, I <: Integer}
+    res = symb.res
+    sep = symb.sep
+    rel = symb.rel
+    chd = symb.chd
+
+    upd = FVector{Channel{FMatrix{T}}}(undef, nv(res))
+
+    nRval = symb.nRval
+    nLval = symb.nLval
+
+    nRptr = nv(res) + one(I)
+
+    Rptr = FVector{I}(undef, nRptr)
+    Rval = FVector{T}(undef, nRval)
+    Lptr = FVector{I}(undef, nRptr)
+    Lval = FVector{T}(undef, nLval)
+    Uval = FVector{T}(undef, nLval)
+
+    # the LU factor is stored as a block
+    # sparse matrix
+    #
+    #   + - + - -
+    #   | R | U ⋯
+    #   + - + - -
+    #   | L | ⋱
+    #   | ⋮ |
+    #
+    # the R L, and U blocks are stored
+    # respectively in the pairs
+    #
+    #   - (Rptr, Rval)
+    #   - (Lptr, Lval)
+    #   - (Uptr, Uval)
+    #
+    # we begin by copying the matrix into this
+    # data structure
+    A = permute(matrix, symb.ord, symb.ord)
+
+    # copy A into R
+    sslu_copy_R!(Rptr, Rval, res, A)
+
+    # copy A into L
+    sslu_copy_L!(Lptr, Lval, res, sep, A) 
+
+    # copy A into U
+    sslu_copy_U!(Uval, res, sep, A)
+
+    mtsslu_impl!(Rptr, Rval, Lptr,
+        Lval, Uval, res, rel, chd, upd)
+
+    return SparseSemiringLU(symb, Rptr, Rval, Lptr, Lval, Uval)    
+end
 
 function sinv(
         A::SparseMatrixCSC;
@@ -363,6 +420,53 @@ function sslu_copy_U!(
     return
 end
 
+function sslu_impl!(
+        Mptr::AbstractVector{I},
+        Mval::AbstractVector{T},
+        Rptr::AbstractVector{I},
+        Rval::AbstractVector{T},
+        Lptr::AbstractVector{I},
+        Lval::AbstractVector{T},
+        Uval::AbstractVector{T},
+        Fval::AbstractVector{T},
+        res::AbstractGraph{I},
+        rel::AbstractGraph{I}, 
+        chd::AbstractGraph{I},
+    ) where {T, I <: Integer}
+    ns = zero(I); Mptr[one(I)] = one(I)
+
+    for j in vertices(res)
+        ns = sslu_loop!(Mptr, Mval, Rptr, Rval, Lptr,
+            Lval, Uval, Fval, res, rel, chd, ns, j)
+    end
+
+    return
+end
+
+function mtsslu_impl!(
+        Rptr::AbstractVector{I},
+        Rval::AbstractVector{T},
+        Lptr::AbstractVector{I},
+        Lval::AbstractVector{T},
+        Uval::AbstractVector{T},
+        res::AbstractGraph{I},
+        rel::AbstractGraph{I}, 
+        chd::AbstractGraph{I},
+        upd::AbstractVector{Channel{FMatrix{T}}},
+    ) where {T, I <: Integer}
+
+    for j in vertices(res)
+        upd[j] = Channel{FMatrix{T}}(1) 
+    end
+
+    @sync for j in vertices(res)
+        @spawn mtsslu_loop!(Rptr, Rval, Lptr,
+            Lval, Uval, res, rel, chd, upd, j)
+    end
+
+    return
+end
+
 function sslu_loop!(
         Mptr::AbstractVector{I},
         Mval::AbstractVector{T},
@@ -488,6 +592,130 @@ function sslu_loop!(
     B₁₂ .= F₁₂
 
     return ns
+end
+
+function mtsslu_loop!(
+        Rptr::AbstractVector{I},
+        Rval::AbstractVector{T},
+        Lptr::AbstractVector{I},
+        Lval::AbstractVector{T},
+        Uval::AbstractVector{T},
+        res::AbstractGraph{I},
+        rel::AbstractGraph{I}, 
+        chd::AbstractGraph{I},
+        upd::AbstractVector{Channel{FMatrix{T}}},
+        j::I,
+    ) where {T, I <: Integer}
+    # nn is the size of the residual at node j
+    #
+    #     nn = | res(j) |
+    #
+    nn = eltypedegree(res, j)
+
+    # na is the size of the separator at node j
+    #
+    #     na = | sep(j) |
+    #
+    na = eltypedegree(rel, j)
+
+    # nj is the size of the bag at node j
+    #
+    #     nj = | bag(j) |
+    #
+    nj = nn + na
+
+    # F is the frontal matrix at node j
+    F = FMatrix{T}(undef, nj, nj)
+
+    #
+    #           nn  na
+    #     F = [ F₁₁ F₁₂ ] nn
+    #         [ F₂₁ F₂₂ ] na
+    #
+    F₁₁ = view(F, oneto(nn),      oneto(nn))
+    F₂₁ = view(F, nn + one(I):nj, oneto(nn))
+    F₁₂ = view(F, oneto(nn),      nn + one(I):nj)
+    F₂₂ = view(F, nn + one(I):nj, nn + one(I):nj)
+
+    # B is part of the LU factor
+    #
+    #          res(j) sep(j)
+    #     B = [ B₁₁    B₁₂  ] res(j)
+    #         [ B₂₁         ] sep(j)
+    #
+    Rp = Rptr[j]
+    Lp = Lptr[j]
+    B₁₁ = reshape(view(Rval, Rp:Rp + nn * nn - one(I)), nn, nn)
+    B₂₁ = reshape(view(Lval, Lp:Lp + nn * na - one(I)), na, nn)
+    B₁₂ = reshape(view(Uval, Lp:Lp + nn * na - one(I)), nn, na)
+
+    # copy B into F
+    #
+    #     F₁₁ ← B₁₁
+    #     F₂₁ ← B₂₁
+    #     F₁₂ ← B₁₂
+    #     F₂₂ ← 0
+    #
+    F₁₁ .= B₁₁
+    F₂₁ .= B₂₁
+    F₁₂ .= B₁₂
+    F₂₂ .= zero(T)
+
+    for i in Iterators.reverse(neighbors(chd, j))
+        mtsslu_add_update!(F, rel, upd, i)
+    end
+
+    # factorize F₁₁ as
+    #
+    #   F₁₁* = U₁₁* L₁₁*
+    #
+    # and store
+    #
+    #   F₁₁ ← L₁₁ + U₁₁
+    #
+    fact = slu!(F₁₁)
+
+    if ispositive(na)
+        # M₂₂ is the na × na update matrix for node j
+        M₂₂ = FMatrix{T}(undef, na, na)
+
+        #
+        #   M₂₂ ← F₂₂
+        #
+        M₂₂ .= F₂₂
+
+        #
+        #   F₂₁ ← F₂₁ U₁₁*
+        #   
+        srdiv!(F₂₁, fact.U)
+
+        #
+        #   F₁₂ ← L₁₁* F₁₂
+        #   
+        sldiv!(fact.L, F₁₂)
+
+        #
+        #   M₂₂ ← M₂₂ + F₂₁ F₁₂
+        #
+        mul!(M₂₂, F₂₁, F₁₂, one(T), one(T))
+
+        #
+        #   upd[j] ← M₂₂
+        #
+        chl = upd[j]; put!(chl, M₂₂); close(chl)
+    end
+ 
+    # copy F₁ into B
+    #
+    #     B₁₁ ← F₁₁
+    #     B₂₁ ← F₂₁
+    #     B₁₂ ← F₁₂
+    #
+    B₁₁ .= F₁₁
+    B₂₁ .= F₂₁
+    B₁₂ .= F₁₂
+
+    return
 end
 
 function ssldiv_impl!(
@@ -768,6 +996,34 @@ function sslu_add_update!(
     # M is the na × na update matrix at node i
     p = ptr[ns]
     M = reshape(view(val, p:p + na * na - one(I)), na, na)
+
+    #
+    #   F ← F + inj M injᵀ
+    #
+    view(F, inj, inj) .+= M
+    return
+end
+
+function mtsslu_add_update!(
+        F::AbstractMatrix{T},
+        rel::AbstractGraph{I},
+        upd::AbstractVector{Channel{FMatrix{T}}},
+        i::I,
+    ) where {T, I}
+    # na is the size of the separator at node i
+    #
+    #   na = | sep(i) |
+    #
+    na = eltypedegree(rel, i)
+
+    # inj is the subset inclusion
+    #
+    #   inj: sep(i) → bag(parent(i))
+    #
+    inj = neighbors(rel, i)
+
+    # M is the na × na update matrix at node i
+    M = take!(upd[i])
 
     #
     #   F ← F + inj M injᵀ
