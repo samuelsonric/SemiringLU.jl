@@ -18,7 +18,7 @@ const DEFAULT_BLOCK_SIZE = 32
 export StrictLowerTriangular
 export SemiringLU, sinv, slu, slu!, sldiv!, srdiv!
 export SymbolicSemiringLU
-export SparseSemiringLU, mtslu, mtsinv, mstldiv!
+export SparseSemiringLU, mtsinv, mtsldiv!
 
 include("strict_lower_triangular.jl")
 include("sinv.jl")
